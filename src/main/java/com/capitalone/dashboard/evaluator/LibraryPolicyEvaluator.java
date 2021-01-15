@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -57,37 +58,29 @@ public class LibraryPolicyEvaluator extends Evaluator<LibraryPolicyAuditResponse
 
     @Override
     public LibraryPolicyAuditResponse evaluate(CollectorItem collectorItem, long beginDate, long endDate, Map<?, ?> data) {
-        return getLibraryPolicyAuditResponse(collectorItem, beginDate, endDate);
+        return getLibraryPolicyAuditResponse(collectorItem);
     }
 
     /**
      * Reusable method for constructing the LibraryPolicyAuditResponse object
      *
      * @param collectorItem Collector item
-     * @param beginDate     Begin Date
-     * @param endDate       End Date
      * @return SecurityReviewAuditResponse
      */
-    private LibraryPolicyAuditResponse getLibraryPolicyAuditResponse(CollectorItem collectorItem, long beginDate, long endDate) {
-        List<LibraryPolicyResult> libraryPolicyResults = libraryPolicyResultsRepository.findByCollectorItemIdAndEvaluationTimestampIsBetweenOrderByTimestampDesc(collectorItem.getId(), beginDate - 1, endDate + 1);
+    private LibraryPolicyAuditResponse getLibraryPolicyAuditResponse(CollectorItem collectorItem) {
+        LibraryPolicyResult returnPolicyResult = libraryPolicyResultsRepository.findTopByCollectorItemIdOrderByEvaluationTimestampDesc(collectorItem.getId());
 
         LibraryPolicyAuditResponse libraryPolicyAuditResponse = new LibraryPolicyAuditResponse();
         libraryPolicyAuditResponse.setAuditEntity(collectorItem.getOptions());
 
-        if (CollectionUtils.isEmpty(libraryPolicyResults)) {
-            libraryPolicyAuditResponse.addAuditStatus(LibraryPolicyAuditStatus.LIBRARY_POLICY_AUDIT_MISSING);
-            return libraryPolicyAuditResponse;
-        }
-        libraryPolicyResults.sort(Comparator.comparing(LibraryPolicyResult::getEvaluationTimestamp).reversed());
-        LibraryPolicyResult returnPolicyResult = libraryPolicyResults.get(0);
-        libraryPolicyAuditResponse.setLibraryPolicyResult(returnPolicyResult);
-        libraryPolicyAuditResponse.setLastExecutionTime(returnPolicyResult.getEvaluationTimestamp());
-
-        if (StringUtils.equalsIgnoreCase(returnPolicyResult.getScanState(), ScanState.INVALID.getState())) {
+        if(Objects.isNull(returnPolicyResult) || MapUtils.isEmpty(returnPolicyResult.getThreats())){
             libraryPolicyAuditResponse.addAuditStatus(LibraryPolicyAuditStatus.LIBRARY_POLICY_INVALID_SCAN);
-        } else if (StringUtils.equalsIgnoreCase(returnPolicyResult.getScanState(), ScanState.NO_FINDINGS.getState())) {
-            libraryPolicyAuditResponse.addAuditStatus(LibraryPolicyAuditStatus.LIBRARY_POLICY_AUDIT_OK);
+            libraryPolicyAuditResponse.setLibraryPolicyResult(returnPolicyResult);
+            libraryPolicyAuditResponse.setLastExecutionTime(Objects.nonNull(returnPolicyResult) ? returnPolicyResult.getEvaluationTimestamp() : 0L );
+            return libraryPolicyAuditResponse;
         } else {
+            libraryPolicyAuditResponse.setLibraryPolicyResult(returnPolicyResult);
+            libraryPolicyAuditResponse.setLastExecutionTime(returnPolicyResult.getEvaluationTimestamp());
             //threats by type
             Set<LibraryPolicyResult.Threat> securityThreats = !MapUtils.isEmpty(returnPolicyResult.getThreats()) ? returnPolicyResult.getThreats().get(LibraryPolicyType.Security) : SetUtils.EMPTY_SET;
             Set<LibraryPolicyResult.Threat> licenseThreats = !MapUtils.isEmpty(returnPolicyResult.getThreats()) ? returnPolicyResult.getThreats().get(LibraryPolicyType.License) : SetUtils.EMPTY_SET;
